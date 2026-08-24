@@ -1,7 +1,6 @@
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
-#import <SpringBoard/SpringBoard.h>
 
 // ----- Declare SBHomeGrabberView -----
 @interface SBHomeGrabberView : UIView
@@ -47,7 +46,7 @@
     UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(dd_handleDoubleTap:)];
     doubleTap.numberOfTapsRequired = 2;
     doubleTap.numberOfTouchesRequired = 1;
-    doubleTap.delaysTouchesEnded = NO;  // Allow immediate action
+    doubleTap.delaysTouchesEnded = NO;
     [self addGestureRecognizer:doubleTap];
     NSLog(@"DoubleTapReachability: Added double-tap gesture to home bar");
 }
@@ -59,14 +58,9 @@
     UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
     [generator impactOccurred];
 
-    // Toggle Reachability — try everything
-    [self dd_toggleReachability];
-}
-
-- (void)dd_toggleReachability {
+    // ---------- Toggle Reachability (inline) ----------
     NSLog(@"DoubleTapReachability: Attempting to toggle Reachability");
 
-    // Try known Reachability managers
     NSArray *classNames = @[@"SBReachabilityManager", @"SBReachabilityController"];
     for (NSString *className in classNames) {
         Class managerClass = NSClassFromString(className);
@@ -75,26 +69,23 @@
         id manager = [managerClass performSelector:@selector(sharedInstance)];
         if (!manager) continue;
 
-        // Method 1: toggleReachability (if available)
+        // Method 1: toggleReachability
         if ([manager respondsToSelector:@selector(toggleReachability)]) {
             [manager performSelector:@selector(toggleReachability)];
             NSLog(@"DoubleTapReachability: Used toggleReachability on %@", className);
             return;
         }
 
-        // Method 2: activateReachability: with BOOL (force on/off)
+        // Method 2: activateReachability: with BOOL
         if ([manager respondsToSelector:@selector(activateReachability:)]) {
-            // Try to detect current state, but fallback to toggling
             BOOL isActive = NO;
             if ([manager respondsToSelector:@selector(isReachabilityActive)]) {
                 isActive = [[manager performSelector:@selector(isReachabilityActive)] boolValue];
             }
-            // Toggle: if active -> deactivate, else activate
             if (isActive) {
                 if ([manager respondsToSelector:@selector(deactivateReachability)]) {
                     [manager performSelector:@selector(deactivateReachability)];
                 } else {
-                    // Force activate with NO
                     [manager performSelector:@selector(activateReachability:) withObject:@(NO)];
                 }
             } else {
@@ -111,18 +102,19 @@
                 if ([manager respondsToSelector:@selector(deactivateReachability)]) {
                     [manager performSelector:@selector(deactivateReachability)];
                     NSLog(@"DoubleTapReachability: Used deactivateReachability on %@", className);
+                    return;
                 }
             } else {
                 if ([manager respondsToSelector:@selector(activateReachability)]) {
                     [manager performSelector:@selector(activateReachability)];
                     NSLog(@"DoubleTapReachability: Used activateReachability on %@", className);
+                    return;
                 }
             }
-            return;
         }
     }
 
-    // Fallback: Post a Darwin notification (some tweaks respond to this)
+    // Fallback: Darwin notification
     CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
                                          CFSTR("com.apple.reachability.toggle"),
                                          NULL, NULL, YES);
