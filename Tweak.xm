@@ -2,6 +2,14 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 
+// ----- Declare SBHomeGrabberView as a subclass of UIView -----
+@interface SBHomeGrabberView : UIView
+@property (nonatomic, readonly) UIWindow *window;
+@property (nonatomic, readonly) NSArray<UIGestureRecognizer *> *gestureRecognizers;
+- (void)addGestureRecognizer:(UIGestureRecognizer *)gestureRecognizer;
+- (void)removeGestureRecognizer:(UIGestureRecognizer *)gestureRecognizer;
+@end
+
 // ----- Reachability classes (runtime lookup) -----
 @interface SBReachabilityManager : NSObject
 + (instancetype)sharedInstance;
