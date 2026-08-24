@@ -107,7 +107,7 @@ void toggleReachability() {
     writeLog(@"Used Darwin notification fallback");
 }
 
-// ----- Overlay view that captures double-taps -----
+// ----- Overlay view -----
 @interface DoubleTapOverlay : UIView
 @end
 
@@ -118,7 +118,7 @@ void toggleReachability() {
     if (self) {
         self.backgroundColor = [UIColor clearColor];
         self.userInteractionEnabled = YES;
-        self.alpha = 0.01; // Almost invisible, but still receives touches
+        self.alpha = 0.01; // nearly invisible
 
         UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleDoubleTap:)];
         doubleTap.numberOfTapsRequired = 2;
@@ -141,13 +141,51 @@ void toggleReachability() {
 }
 
 - (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
-    // Only respond to touches in the bottom 50px (adjust as needed)
+    // Only respond to touches in the bottom 50px
     return point.y > self.bounds.size.height - 50;
 }
 
 @end
 
-// ----- Hook SBHomeScreenViewController to add overlay -----
+// ----- Helper to add overlay (called from hook) -----
+void addOverlay() {
+    UIWindow *keyWindow = nil;
+    if ([UIApplication sharedApplication].delegate && [[UIApplication sharedApplication].delegate respondsToSelector:@selector(window)]) {
+        keyWindow = [[UIApplication sharedApplication].delegate window];
+    }
+    if (!keyWindow) {
+        // Suppress deprecation warning for .windows
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        keyWindow = [UIApplication sharedApplication].windows.firstObject;
+#pragma clang diagnostic pop
+    }
+    if (!keyWindow) {
+        writeLog(@"No keyWindow, retrying...");
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+            addOverlay();
+        });
+        return;
+    }
+
+    // Check if overlay already exists
+    for (UIView *subview in keyWindow.subviews) {
+        if ([subview isKindOfClass:[DoubleTapOverlay class]]) {
+            writeLog(@"Overlay already exists, skipping.");
+            return;
+        }
+    }
+
+    CGFloat height = 60;
+    CGFloat width = keyWindow.bounds.size.width;
+    CGFloat y = keyWindow.bounds.size.height - height;
+    DoubleTapOverlay *overlay = [[DoubleTapOverlay alloc] initWithFrame:CGRectMake(0, y, width, height)];
+    overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin;
+    [keyWindow addSubview:overlay];
+    writeLog(@"Overlay added to keyWindow!");
+}
+
+// ----- Hook SBHomeScreenViewController -----
 %hook SBHomeScreenViewController
 
 - (void)viewDidAppear:(BOOL)animated {
@@ -155,28 +193,7 @@ void toggleReachability() {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-            UIWindow *keyWindow = nil;
-            if ([UIApplication sharedApplication].delegate && [[UIApplication sharedApplication].delegate respondsToSelector:@selector(window)]) {
-                keyWindow = [[UIApplication sharedApplication].delegate window];
-            }
-            if (!keyWindow) {
-                keyWindow = [UIApplication sharedApplication].windows.firstObject;
-            }
-            if (!keyWindow) {
-                writeLog(@"No keyWindow, retrying...");
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-                    [self viewDidAppear:animated]; // re-trigger
-                });
-                return;
-            }
-
-            // Add overlay covering the bottom area
-            CGFloat height = 60; // covers home bar area
-            CGFloat width = keyWindow.bounds.size.width;
-            CGFloat y = keyWindow.bounds.size.height - height;
-            DoubleTapOverlay *overlay = [[DoubleTapOverlay alloc] initWithFrame:CGRectMake(0, y, width, height)];
-            [keyWindow addSubview:overlay];
-            writeLog(@"Overlay added to keyWindow!");
+            addOverlay();
         });
     });
 }
