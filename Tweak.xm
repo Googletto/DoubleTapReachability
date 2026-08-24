@@ -2,16 +2,12 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 
-// ----- Logging helper with file toggle -----
-static BOOL debugEnabled = NO;
+// ----- Logging helper (file-toggle) -----
 static NSString *logFilePath = @"/var/mobile/Documents/DoubleTapReachability.log";
 static NSString *debugFlagPath = @"/var/mobile/Documents/DoubleTapReachability.debug";
 
 void writeLog(NSString *format, ...) {
-    // Check debug flag file on every log call
-    debugEnabled = [[NSFileManager defaultManager] fileExistsAtPath:debugFlagPath];
-    if (!debugEnabled) return;
-
+    if (![[NSFileManager defaultManager] fileExistsAtPath:debugFlagPath]) return;
     va_list args;
     va_start(args, format);
     NSString *message = [[NSString alloc] initWithFormat:format arguments:args];
@@ -53,6 +49,18 @@ void writeLog(NSString *format, ...) {
 - (void)toggleReachability;
 @end
 
+// ----- Custom gesture delegate -----
+@interface DoubleTapGestureDelegate : NSObject <UIGestureRecognizerDelegate>
+@end
+@implementation DoubleTapGestureDelegate
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
+    return YES;
+}
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch {
+    return YES;
+}
+@end
+
 // ----- Helper functions -----
 void findHomeGrabberInView(UIView *view, UIView **outView) {
     if (*outView) return;
@@ -81,8 +89,19 @@ void attachGestureToView(UIView *view, id target, SEL action) {
     UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc] initWithTarget:target action:action];
     doubleTap.numberOfTapsRequired = 2;
     doubleTap.numberOfTouchesRequired = 1;
+    doubleTap.cancelsTouchesInView = NO;
+    doubleTap.delaysTouchesBegan = NO;
+    doubleTap.delaysTouchesEnded = NO;
+
+    static DoubleTapGestureDelegate *delegate = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        delegate = [[DoubleTapGestureDelegate alloc] init];
+    });
+    doubleTap.delegate = delegate;
+
     [view addGestureRecognizer:doubleTap];
-    writeLog(@"Gesture attached to home bar!");
+    writeLog(@"Gesture attached to home bar with simultaneous delegate!");
 }
 
 void toggleReachability() {
