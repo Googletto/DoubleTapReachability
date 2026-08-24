@@ -56,7 +56,7 @@ void loadPreferences() {
 - (void)toggleReachability;
 @end
 
-// ----- Helper functions (they take 'self' as first argument) -----
+// ----- Helper functions -----
 void findHomeGrabberInView(UIView *view, UIView **outView) {
     if (*outView) return;
     if ([view isKindOfClass:NSClassFromString(@"SBHomeGrabberView")] ||
@@ -71,7 +71,6 @@ void findHomeGrabberInView(UIView *view, UIView **outView) {
 }
 
 void attachGestureToView(UIView *view, id target, SEL action) {
-    // Remove existing double-tap gestures
     for (UIGestureRecognizer *gr in view.gestureRecognizers) {
         if ([gr isKindOfClass:[UITapGestureRecognizer class]]) {
             UITapGestureRecognizer *tap = (UITapGestureRecognizer *)gr;
@@ -147,13 +146,17 @@ void toggleReachability() {
 }
 
 void addDoubleTapToHomeBar(id self) {
-    // Get key window without deprecated API
     UIWindow *keyWindow = nil;
+    // Try delegate window first (least deprecated)
     if ([UIApplication sharedApplication].delegate && [[UIApplication sharedApplication].delegate respondsToSelector:@selector(window)]) {
         keyWindow = [[UIApplication sharedApplication].delegate window];
     }
+    // Fallback: suppress deprecation warning for .windows
     if (!keyWindow) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
         keyWindow = [UIApplication sharedApplication].windows.firstObject;
+#pragma clang diagnostic pop
     }
     if (!keyWindow) {
         writeLog(@"No keyWindow, retrying...");
