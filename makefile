@@ -10,11 +10,7 @@ TWEAK_NAME = DoubleTapReachability
 
 DoubleTapReachability_FILES = Tweak.xm
 DoubleTapReachability_CFLAGS = -fobjc-arc
-DoubleTapReachability_LDFLAGS = -fobjc-link-runtime   # ← FIX for linker errors
+DoubleTapReachability_LDFLAGS = -fobjc-link-runtime
 DoubleTapReachability_FRAMEWORKS = UIKit
 
 include $(THEOS_MAKE_PATH)/tweak.mk
-
-# If you want a settings bundle later, add it here:
-# SUBPROJECTS += DoubleTapReachabilityPrefs.bundle
-# include $(THEOS_MAKE_PATH)/aggregate.mk
