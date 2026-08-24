@@ -13,7 +13,5 @@ DoubleTapReachability_CFLAGS = -fobjc-arc
 DoubleTapReachability_LDFLAGS = -fobjc-link-runtime
 DoubleTapReachability_FRAMEWORKS = UIKit
 
-SUBPROJECTS += DoubleTapReachabilityPrefs.bundle
-
+# NO SUBPROJECTS – we use a file toggle instead
 include $(THEOS_MAKE_PATH)/tweak.mk
-include $(THEOS_MAKE_PATH)/aggregate.mk
