@@ -151,8 +151,25 @@ void toggleReachability() {
 
 @end
 
-// ----- Create a separate window for the overlay -----
+// ----- Global reference to our overlay window -----
+static UIWindow *overlayWindow = nil;
+
+// ----- Create or show the overlay window -----
 void addOverlayWindow() {
+    // If the window already exists and is not hidden, just keep it
+    if (overlayWindow && !overlayWindow.hidden) {
+        writeLog(@"Overlay window already exists and is visible.");
+        return;
+    }
+
+    // If it exists but is hidden, show it again
+    if (overlayWindow && overlayWindow.hidden) {
+        overlayWindow.hidden = NO;
+        writeLog(@"Overlay window was hidden, shown again.");
+        return;
+    }
+
+    // Create a new window
     UIWindow *keyWindow = nil;
     if ([UIApplication sharedApplication].delegate && [[UIApplication sharedApplication].delegate respondsToSelector:@selector(window)]) {
         keyWindow = [[UIApplication sharedApplication].delegate window];
@@ -171,55 +188,30 @@ void addOverlayWindow() {
         return;
     }
 
-    // Check if our overlay window already exists
-    BOOL found = NO;
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    for (UIWindow *window in [UIApplication sharedApplication].windows) {
-        if ([window isKindOfClass:NSClassFromString(@"DoubleTapOverlayWindow")]) {
-            found = YES;
-            break;
-        }
-    }
-#pragma clang diagnostic pop
-
-    if (found) {
-        writeLog(@"Overlay window already exists, skipping.");
-        return;
-    }
-
-    // Create a custom window
-    UIWindow *overlayWindow = [[UIWindow alloc] initWithFrame:keyWindow.bounds];
-    overlayWindow.windowLevel = UIWindowLevelStatusBar + 1; // above everything
+    overlayWindow = [[UIWindow alloc] initWithFrame:keyWindow.bounds];
+    overlayWindow.windowLevel = UIWindowLevelAlert; // highest level (above everything)
     overlayWindow.backgroundColor = [UIColor clearColor];
     overlayWindow.userInteractionEnabled = YES;
     overlayWindow.hidden = NO;
 
-    // Add the overlay view to cover the bottom
+    // Add overlay view at the bottom
     CGFloat height = 60;
     CGFloat y = overlayWindow.bounds.size.height - height;
     DoubleTapOverlayView *overlayView = [[DoubleTapOverlayView alloc] initWithFrame:CGRectMake(0, y, overlayWindow.bounds.size.width, height)];
     overlayView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin;
     [overlayWindow addSubview:overlayView];
 
-    // Keep a strong reference
-    static UIWindow *staticOverlayWindow = nil;
-    staticOverlayWindow = overlayWindow;
-
-    // Use the static variable to avoid "unused" warning (just log its address)
-    writeLog(@"Overlay window added with level %f (window: %p)", overlayWindow.windowLevel, staticOverlayWindow);
+    writeLog(@"Overlay window created with level %f", overlayWindow.windowLevel);
 }
 
-// ----- Hook SBHomeScreenViewController -----
+// ----- Hook SBHomeScreenViewController to re-add overlay on every appearance -----
 %hook SBHomeScreenViewController
 
 - (void)viewDidAppear:(BOOL)animated {
     %orig;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-            addOverlayWindow();
-        });
+    // Re-add or show overlay every time the home screen appears
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        addOverlayWindow();
     });
 }
 
