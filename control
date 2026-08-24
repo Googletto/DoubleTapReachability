@@ -2,10 +2,8 @@ Package: com.yourname.doubletapareachability
 Name: Double Tap Reachability
 Version: 1.0.0
 Architecture: iphoneos-arm64
-Description: Double tap home bar to trigger Reachability
+Description: Double tap the home bar to trigger Reachability on notched devices.
 Maintainer: Your Name <your@email.com>
 Author: Your Name <your@email.com>
 Section: Tweaks
-Depends: firmware (>= 17.0), mobilesubstrate (>= 0.9.7000)
-Conflicts: 
-Replaces:
+Depends: mobilesubstrate (>= 0.9.7000), firmware (>= 17.0)
