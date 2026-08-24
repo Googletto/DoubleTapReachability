@@ -2,6 +2,51 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 
+// ----- Logging helper -----
+static BOOL debugEnabled = NO;
+static NSString *logFilePath = @"/var/mobile/Documents/DoubleTapReachability.log";
+
+void writeLog(NSString *format, ...) {
+    if (!debugEnabled) return;
+
+    va_list args;
+    va_start(args, format);
+    NSString *message = [[NSString alloc] initWithFormat:format arguments:args];
+    va_end(args);
+
+    // Write to file
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *dir = [logFilePath stringByDeletingLastPathComponent];
+    if (![fm fileExistsAtPath:dir]) {
+        [fm createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
+    }
+
+    NSDateFormatter *df = [[NSDateFormatter alloc] init];
+    [df setDateFormat:@"yyyy-MM-dd HH:mm:ss"];
+    NSString *timestamp = [df stringFromDate:[NSDate date]];
+    NSString *logLine = [NSString stringWithFormat:@"[%@] %@\n", timestamp, message];
+
+    NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath:logFilePath];
+    if (!fh) {
+        [logLine writeToFile:logFilePath atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    } else {
+        [fh seekToEndOfFile];
+        [fh writeData:[logLine dataUsingEncoding:NSUTF8StringEncoding]];
+        [fh closeFile];
+    }
+
+    // Also print to console
+    NSLog(@"%@", message);
+}
+
+// ----- Preferences -----
+void loadPreferences() {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    [defaults registerDefaults:@{@"DebugLogging": @NO}];
+    debugEnabled = [defaults boolForKey:@"DebugLogging"];
+    writeLog(@"Preferences loaded. Debug logging: %@", debugEnabled ? @"ON" : @"OFF");
+}
+
 // ----- Reachability classes (declared) -----
 @interface SBReachabilityManager : NSObject
 + (instancetype)sharedInstance;
@@ -16,11 +61,12 @@
 - (void)toggleReachability;
 @end
 
-// ----- Hook the home screen view controller to add gesture -----
-%hook SBHomeScreenViewController   // or SBDashBoardViewController
+// ----- Hook the home screen view controller -----
+%hook SBHomeScreenViewController
 
 - (void)viewDidAppear:(BOOL)animated {
     %orig;
+    loadPreferences();
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         [self performSelector:@selector(addDoubleTapToHomeBar) withObject:nil afterDelay:1.0];
@@ -30,26 +76,24 @@
 - (void)addDoubleTapToHomeBar {
     UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
     if (!keyWindow) {
-        NSLog(@"DoubleTapReachability: No keyWindow, retrying...");
+        writeLog(@"No keyWindow, retrying...");
         [self performSelector:@selector(addDoubleTapToHomeBar) withObject:nil afterDelay:2.0];
         return;
     }
 
-    // Search for SBHomeGrabberView
     __block UIView *homeBar = nil;
     [self findHomeGrabberInView:keyWindow result:&homeBar];
-    
+
     if (homeBar) {
         [self attachGestureToView:homeBar];
     } else {
-        NSLog(@"DoubleTapReachability: Home bar not found, retrying...");
+        writeLog(@"Home bar not found, retrying...");
         [self performSelector:@selector(addDoubleTapToHomeBar) withObject:nil afterDelay:3.0];
     }
 }
 
 - (void)findHomeGrabberInView:(UIView *)view result:(UIView **)outView {
     if (*outView) return;
-    // Check class names: SBHomeGrabberView or _SBHomeGrabberView
     if ([view isKindOfClass:NSClassFromString(@"SBHomeGrabberView")] ||
         [view isKindOfClass:NSClassFromString(@"_SBHomeGrabberView")]) {
         *outView = view;
@@ -62,12 +106,12 @@
 }
 
 - (void)attachGestureToView:(UIView *)view {
-    // Remove existing double-tap gestures
     for (UIGestureRecognizer *gr in view.gestureRecognizers) {
         if ([gr isKindOfClass:[UITapGestureRecognizer class]]) {
             UITapGestureRecognizer *tap = (UITapGestureRecognizer *)gr;
             if (tap.numberOfTapsRequired == 2) {
                 [view removeGestureRecognizer:gr];
+                writeLog(@"Removed existing double-tap gesture");
             }
         }
     }
@@ -76,24 +120,21 @@
     doubleTap.numberOfTapsRequired = 2;
     doubleTap.numberOfTouchesRequired = 1;
     [view addGestureRecognizer:doubleTap];
-    NSLog(@"DoubleTapReachability: Gesture attached to home bar!");
+    writeLog(@"Gesture attached to home bar!");
 }
 
 - (void)handleDoubleTap:(UITapGestureRecognizer *)gesture {
-    NSLog(@"DoubleTapReachability: Double-tap detected!");
+    writeLog(@"Double-tap detected!");
 
-    // Haptic feedback
     UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
     [generator impactOccurred];
 
-    // Toggle Reachability
     [self toggleReachability];
 }
 
 - (void)toggleReachability {
-    NSLog(@"DoubleTapReachability: Toggling Reachability...");
-    
-    // Try multiple known managers
+    writeLog(@"Toggling Reachability...");
+
     NSArray *classNames = @[@"SBReachabilityManager", @"SBReachabilityController"];
     for (NSString *className in classNames) {
         Class cls = NSClassFromString(className);
@@ -101,14 +142,12 @@
         id manager = [cls performSelector:@selector(sharedInstance)];
         if (!manager) continue;
 
-        // Prefer toggleReachability
         if ([manager respondsToSelector:@selector(toggleReachability)]) {
             [manager performSelector:@selector(toggleReachability)];
-            NSLog(@"DoubleTapReachability: Used toggleReachability on %@", className);
+            writeLog(@"Used toggleReachability on %@", className);
             return;
         }
 
-        // Try activateReachability: with BOOL
         if ([manager respondsToSelector:@selector(activateReachability:)]) {
             BOOL active = NO;
             if ([manager respondsToSelector:@selector(isReachabilityActive)]) {
@@ -123,34 +162,32 @@
             } else {
                 [manager performSelector:@selector(activateReachability:) withObject:@(YES)];
             }
-            NSLog(@"DoubleTapReachability: Used activateReachability: on %@", className);
+            writeLog(@"Used activateReachability: on %@", className);
             return;
         }
 
-        // Fallback: activate/deactivate separate
         if ([manager respondsToSelector:@selector(isReachabilityActive)]) {
             BOOL active = [[manager performSelector:@selector(isReachabilityActive)] boolValue];
             if (active) {
                 if ([manager respondsToSelector:@selector(deactivateReachability)]) {
                     [manager performSelector:@selector(deactivateReachability)];
-                    NSLog(@"DoubleTapReachability: Used deactivateReachability on %@", className);
+                    writeLog(@"Used deactivateReachability on %@", className);
                     return;
                 }
             } else {
                 if ([manager respondsToSelector:@selector(activateReachability)]) {
                     [manager performSelector:@selector(activateReachability)];
-                    NSLog(@"DoubleTapReachability: Used activateReachability on %@", className);
+                    writeLog(@"Used activateReachability on %@", className);
                     return;
                 }
             }
         }
     }
 
-    // Final fallback: Darwin notification
     CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
                                          CFSTR("com.apple.reachability.toggle"),
                                          NULL, NULL, YES);
-    NSLog(@"DoubleTapReachability: Used Darwin notification fallback");
+    writeLog(@"Used Darwin notification fallback");
 }
 
 %end
