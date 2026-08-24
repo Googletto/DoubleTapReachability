@@ -107,18 +107,18 @@ void toggleReachability() {
     writeLog(@"Used Darwin notification fallback");
 }
 
-// ----- Overlay view -----
-@interface DoubleTapOverlay : UIView
+// ----- Overlay view that handles touches -----
+@interface DoubleTapOverlayView : UIView
 @end
 
-@implementation DoubleTapOverlay
+@implementation DoubleTapOverlayView
 
 - (instancetype)initWithFrame:(CGRect)frame {
     self = [super initWithFrame:frame];
     if (self) {
         self.backgroundColor = [UIColor clearColor];
         self.userInteractionEnabled = YES;
-        self.alpha = 0.01; // almost invisible, but still receives touches
+        self.alpha = 0.01; // nearly invisible
 
         UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleDoubleTap:)];
         doubleTap.numberOfTapsRequired = 2;
@@ -128,15 +128,14 @@ void toggleReachability() {
         doubleTap.delaysTouchesEnded = NO;
         [self addGestureRecognizer:doubleTap];
 
-        writeLog(@"Overlay created with double-tap gesture");
+        writeLog(@"Overlay view created with double-tap gesture");
     }
     return self;
 }
 
-// Log every touch that reaches the overlay
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
     [super touchesBegan:touches withEvent:event];
-    writeLog(@"Touch began on overlay!");
+    writeLog(@"Touch began on overlay view!");
 }
 
 - (void)handleDoubleTap:(UITapGestureRecognizer *)gesture {
@@ -146,21 +145,19 @@ void toggleReachability() {
     toggleReachability();
 }
 
-// Accept all touches within our frame
 - (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
     return YES;
 }
 
 @end
 
-// ----- Helper to add overlay (called from hook) -----
-void addOverlay() {
+// ----- Create a separate window for the overlay -----
+void addOverlayWindow() {
     UIWindow *keyWindow = nil;
     if ([UIApplication sharedApplication].delegate && [[UIApplication sharedApplication].delegate respondsToSelector:@selector(window)]) {
         keyWindow = [[UIApplication sharedApplication].delegate window];
     }
     if (!keyWindow) {
-        // Suppress deprecation warning for .windows
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
         keyWindow = [UIApplication sharedApplication].windows.firstObject;
@@ -169,26 +166,38 @@ void addOverlay() {
     if (!keyWindow) {
         writeLog(@"No keyWindow, retrying...");
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-            addOverlay();
+            addOverlayWindow();
         });
         return;
     }
 
-    // Check if overlay already exists
-    for (UIView *subview in keyWindow.subviews) {
-        if ([subview isKindOfClass:[DoubleTapOverlay class]]) {
-            writeLog(@"Overlay already exists, skipping.");
+    // Check if our overlay window already exists
+    for (UIWindow *window in [UIApplication sharedApplication].windows) {
+        if ([window isKindOfClass:NSClassFromString(@"DoubleTapOverlayWindow")]) {
+            writeLog(@"Overlay window already exists, skipping.");
             return;
         }
     }
 
+    // Create a custom window
+    UIWindow *overlayWindow = [[UIWindow alloc] initWithFrame:keyWindow.bounds];
+    overlayWindow.windowLevel = UIWindowLevelStatusBar + 1; // above everything
+    overlayWindow.backgroundColor = [UIColor clearColor];
+    overlayWindow.userInteractionEnabled = YES;
+    overlayWindow.hidden = NO;
+
+    // Add the overlay view to cover the bottom
     CGFloat height = 60;
-    CGFloat width = keyWindow.bounds.size.width;
-    CGFloat y = keyWindow.bounds.size.height - height;
-    DoubleTapOverlay *overlay = [[DoubleTapOverlay alloc] initWithFrame:CGRectMake(0, y, width, height)];
-    overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin;
-    [keyWindow addSubview:overlay];
-    writeLog(@"Overlay added to keyWindow!");
+    CGFloat y = overlayWindow.bounds.size.height - height;
+    DoubleTapOverlayView *overlayView = [[DoubleTapOverlayView alloc] initWithFrame:CGRectMake(0, y, overlayWindow.bounds.size.width, height)];
+    overlayView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin;
+    [overlayWindow addSubview:overlayView];
+
+    // Keep a reference to the window (we'll store it in a static variable)
+    static UIWindow *staticOverlayWindow = nil;
+    staticOverlayWindow = overlayWindow;
+
+    writeLog(@"Overlay window added with level %f", overlayWindow.windowLevel);
 }
 
 // ----- Hook SBHomeScreenViewController -----
@@ -199,7 +208,7 @@ void addOverlay() {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-            addOverlay();
+            addOverlayWindow();
         });
     });
 }
