@@ -118,7 +118,7 @@ void toggleReachability() {
     if (self) {
         self.backgroundColor = [UIColor clearColor];
         self.userInteractionEnabled = YES;
-        self.alpha = 0.01; // nearly invisible
+        self.alpha = 0.01; // almost invisible, but still receives touches
 
         UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleDoubleTap:)];
         doubleTap.numberOfTapsRequired = 2;
@@ -133,6 +133,12 @@ void toggleReachability() {
     return self;
 }
 
+// Log every touch that reaches the overlay
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [super touchesBegan:touches withEvent:event];
+    writeLog(@"Touch began on overlay!");
+}
+
 - (void)handleDoubleTap:(UITapGestureRecognizer *)gesture {
     writeLog(@"Double-tap detected on overlay!");
     UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
@@ -140,9 +146,9 @@ void toggleReachability() {
     toggleReachability();
 }
 
+// Accept all touches within our frame
 - (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
-    // Only respond to touches in the bottom 50px
-    return point.y > self.bounds.size.height - 50;
+    return YES;
 }
 
 @end
