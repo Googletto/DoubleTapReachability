@@ -2,15 +2,7 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 
-// ----- Declare SBHomeGrabberView -----
-@interface SBHomeGrabberView : UIView
-@property (nonatomic, readonly) UIWindow *window;
-@property (nonatomic, readonly) NSArray<UIGestureRecognizer *> *gestureRecognizers;
-- (void)addGestureRecognizer:(UIGestureRecognizer *)gestureRecognizer;
-- (void)removeGestureRecognizer:(UIGestureRecognizer *)gestureRecognizer;
-@end
-
-// ----- Reachability classes -----
+// ----- Reachability classes (declared) -----
 @interface SBReachabilityManager : NSObject
 + (instancetype)sharedInstance;
 - (BOOL)isReachabilityActive;
@@ -24,65 +16,105 @@
 - (void)toggleReachability;
 @end
 
-// ----- Hook SBHomeGrabberView -----
-%hook SBHomeGrabberView
+// ----- Hook the home screen view controller to add gesture -----
+%hook SBHomeScreenViewController   // or SBDashBoardViewController
 
-- (void)didMoveToWindow {
+- (void)viewDidAppear:(BOOL)animated {
     %orig;
-    if (!self.window) return;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        [self performSelector:@selector(addDoubleTapToHomeBar) withObject:nil afterDelay:1.0];
+    });
+}
 
-    // Remove any existing double-tap gestures (cleanup)
-    for (UIGestureRecognizer *gr in self.gestureRecognizers) {
+- (void)addDoubleTapToHomeBar {
+    UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
+    if (!keyWindow) {
+        NSLog(@"DoubleTapReachability: No keyWindow, retrying...");
+        [self performSelector:@selector(addDoubleTapToHomeBar) withObject:nil afterDelay:2.0];
+        return;
+    }
+
+    // Search for SBHomeGrabberView
+    __block UIView *homeBar = nil;
+    [self findHomeGrabberInView:keyWindow result:&homeBar];
+    
+    if (homeBar) {
+        [self attachGestureToView:homeBar];
+    } else {
+        NSLog(@"DoubleTapReachability: Home bar not found, retrying...");
+        [self performSelector:@selector(addDoubleTapToHomeBar) withObject:nil afterDelay:3.0];
+    }
+}
+
+- (void)findHomeGrabberInView:(UIView *)view result:(UIView **)outView {
+    if (*outView) return;
+    // Check class names: SBHomeGrabberView or _SBHomeGrabberView
+    if ([view isKindOfClass:NSClassFromString(@"SBHomeGrabberView")] ||
+        [view isKindOfClass:NSClassFromString(@"_SBHomeGrabberView")]) {
+        *outView = view;
+        return;
+    }
+    for (UIView *subview in view.subviews) {
+        [self findHomeGrabberInView:subview result:outView];
+        if (*outView) return;
+    }
+}
+
+- (void)attachGestureToView:(UIView *)view {
+    // Remove existing double-tap gestures
+    for (UIGestureRecognizer *gr in view.gestureRecognizers) {
         if ([gr isKindOfClass:[UITapGestureRecognizer class]]) {
             UITapGestureRecognizer *tap = (UITapGestureRecognizer *)gr;
             if (tap.numberOfTapsRequired == 2) {
-                [self removeGestureRecognizer:gr];
-                NSLog(@"DoubleTapReachability: Removed existing double-tap gesture");
+                [view removeGestureRecognizer:gr];
             }
         }
     }
 
-    // Add fresh double-tap gesture
-    UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(dd_handleDoubleTap:)];
+    UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleDoubleTap:)];
     doubleTap.numberOfTapsRequired = 2;
     doubleTap.numberOfTouchesRequired = 1;
-    doubleTap.delaysTouchesEnded = NO;
-    [self addGestureRecognizer:doubleTap];
-    NSLog(@"DoubleTapReachability: Added double-tap gesture to home bar");
+    [view addGestureRecognizer:doubleTap];
+    NSLog(@"DoubleTapReachability: Gesture attached to home bar!");
 }
 
-- (void)dd_handleDoubleTap:(UITapGestureRecognizer *)gesture {
+- (void)handleDoubleTap:(UITapGestureRecognizer *)gesture {
     NSLog(@"DoubleTapReachability: Double-tap detected!");
 
     // Haptic feedback
     UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
     [generator impactOccurred];
 
-    // ---------- Toggle Reachability (inline) ----------
-    NSLog(@"DoubleTapReachability: Attempting to toggle Reachability");
+    // Toggle Reachability
+    [self toggleReachability];
+}
 
+- (void)toggleReachability {
+    NSLog(@"DoubleTapReachability: Toggling Reachability...");
+    
+    // Try multiple known managers
     NSArray *classNames = @[@"SBReachabilityManager", @"SBReachabilityController"];
     for (NSString *className in classNames) {
-        Class managerClass = NSClassFromString(className);
-        if (!managerClass) continue;
-
-        id manager = [managerClass performSelector:@selector(sharedInstance)];
+        Class cls = NSClassFromString(className);
+        if (!cls) continue;
+        id manager = [cls performSelector:@selector(sharedInstance)];
         if (!manager) continue;
 
-        // Method 1: toggleReachability
+        // Prefer toggleReachability
         if ([manager respondsToSelector:@selector(toggleReachability)]) {
             [manager performSelector:@selector(toggleReachability)];
             NSLog(@"DoubleTapReachability: Used toggleReachability on %@", className);
             return;
         }
 
-        // Method 2: activateReachability: with BOOL
+        // Try activateReachability: with BOOL
         if ([manager respondsToSelector:@selector(activateReachability:)]) {
-            BOOL isActive = NO;
+            BOOL active = NO;
             if ([manager respondsToSelector:@selector(isReachabilityActive)]) {
-                isActive = [[manager performSelector:@selector(isReachabilityActive)] boolValue];
+                active = [[manager performSelector:@selector(isReachabilityActive)] boolValue];
             }
-            if (isActive) {
+            if (active) {
                 if ([manager respondsToSelector:@selector(deactivateReachability)]) {
                     [manager performSelector:@selector(deactivateReachability)];
                 } else {
@@ -95,7 +127,7 @@
             return;
         }
 
-        // Method 3: activate / deactivate separately
+        // Fallback: activate/deactivate separate
         if ([manager respondsToSelector:@selector(isReachabilityActive)]) {
             BOOL active = [[manager performSelector:@selector(isReachabilityActive)] boolValue];
             if (active) {
@@ -114,7 +146,7 @@
         }
     }
 
-    // Fallback: Darwin notification
+    // Final fallback: Darwin notification
     CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
                                          CFSTR("com.apple.reachability.toggle"),
                                          NULL, NULL, YES);
