@@ -32,7 +32,7 @@ jobs:
         make package
     
     - name: Upload DEB
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4   # <-- updated to v4
       with:
         name: DoubleTapReachability
         path: packages/*.deb
