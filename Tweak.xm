@@ -118,7 +118,7 @@ void toggleReachability() {
     if (self) {
         self.backgroundColor = [UIColor clearColor];
         self.userInteractionEnabled = YES;
-        self.alpha = 0.01; // nearly invisible
+        self.alpha = 0.01;
 
         UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleDoubleTap:)];
         doubleTap.numberOfTapsRequired = 2;
@@ -172,11 +172,20 @@ void addOverlayWindow() {
     }
 
     // Check if our overlay window already exists
+    BOOL found = NO;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     for (UIWindow *window in [UIApplication sharedApplication].windows) {
         if ([window isKindOfClass:NSClassFromString(@"DoubleTapOverlayWindow")]) {
-            writeLog(@"Overlay window already exists, skipping.");
-            return;
+            found = YES;
+            break;
         }
+    }
+#pragma clang diagnostic pop
+
+    if (found) {
+        writeLog(@"Overlay window already exists, skipping.");
+        return;
     }
 
     // Create a custom window
@@ -193,11 +202,12 @@ void addOverlayWindow() {
     overlayView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin;
     [overlayWindow addSubview:overlayView];
 
-    // Keep a reference to the window (we'll store it in a static variable)
+    // Keep a strong reference
     static UIWindow *staticOverlayWindow = nil;
     staticOverlayWindow = overlayWindow;
 
-    writeLog(@"Overlay window added with level %f", overlayWindow.windowLevel);
+    // Use the static variable to avoid "unused" warning (just log its address)
+    writeLog(@"Overlay window added with level %f (window: %p)", overlayWindow.windowLevel, staticOverlayWindow);
 }
 
 // ----- Hook SBHomeScreenViewController -----
