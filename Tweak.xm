@@ -2,12 +2,16 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 
-// ----- Logging helper -----
+// ----- Logging helper with file toggle -----
 static BOOL debugEnabled = NO;
 static NSString *logFilePath = @"/var/mobile/Documents/DoubleTapReachability.log";
+static NSString *debugFlagPath = @"/var/mobile/Documents/DoubleTapReachability.debug";
 
 void writeLog(NSString *format, ...) {
+    // Check debug flag file on every log call
+    debugEnabled = [[NSFileManager defaultManager] fileExistsAtPath:debugFlagPath];
     if (!debugEnabled) return;
+
     va_list args;
     va_start(args, format);
     NSString *message = [[NSString alloc] initWithFormat:format arguments:args];
@@ -33,13 +37,6 @@ void writeLog(NSString *format, ...) {
         [fh closeFile];
     }
     NSLog(@"%@", message);
-}
-
-void loadPreferences() {
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    [defaults registerDefaults:@{@"DebugLogging": @NO}];
-    debugEnabled = [defaults boolForKey:@"DebugLogging"];
-    writeLog(@"Preferences loaded. Debug logging: %@", debugEnabled ? @"ON" : @"OFF");
 }
 
 // ----- Reachability classes -----
@@ -147,11 +144,9 @@ void toggleReachability() {
 
 void addDoubleTapToHomeBar(id self) {
     UIWindow *keyWindow = nil;
-    // Try delegate window first (least deprecated)
     if ([UIApplication sharedApplication].delegate && [[UIApplication sharedApplication].delegate respondsToSelector:@selector(window)]) {
         keyWindow = [[UIApplication sharedApplication].delegate window];
     }
-    // Fallback: suppress deprecation warning for .windows
     if (!keyWindow) {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
@@ -184,7 +179,6 @@ void addDoubleTapToHomeBar(id self) {
 
 - (void)viewDidAppear:(BOOL)animated {
     %orig;
-    loadPreferences();
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
