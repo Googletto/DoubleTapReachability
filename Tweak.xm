@@ -49,61 +49,7 @@ void writeLog(NSString *format, ...) {
 - (void)toggleReachability;
 @end
 
-// ----- Custom gesture delegate -----
-@interface DoubleTapGestureDelegate : NSObject <UIGestureRecognizerDelegate>
-@end
-@implementation DoubleTapGestureDelegate
-- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
-    return YES;
-}
-- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch {
-    return YES;
-}
-@end
-
-// ----- Helper functions -----
-void findHomeGrabberInView(UIView *view, UIView **outView) {
-    if (*outView) return;
-    if ([view isKindOfClass:NSClassFromString(@"SBHomeGrabberView")] ||
-        [view isKindOfClass:NSClassFromString(@"_SBHomeGrabberView")]) {
-        *outView = view;
-        return;
-    }
-    for (UIView *subview in view.subviews) {
-        findHomeGrabberInView(subview, outView);
-        if (*outView) return;
-    }
-}
-
-void attachGestureToView(UIView *view, id target, SEL action) {
-    for (UIGestureRecognizer *gr in view.gestureRecognizers) {
-        if ([gr isKindOfClass:[UITapGestureRecognizer class]]) {
-            UITapGestureRecognizer *tap = (UITapGestureRecognizer *)gr;
-            if (tap.numberOfTapsRequired == 2) {
-                [view removeGestureRecognizer:gr];
-                writeLog(@"Removed existing double-tap gesture");
-            }
-        }
-    }
-
-    UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc] initWithTarget:target action:action];
-    doubleTap.numberOfTapsRequired = 2;
-    doubleTap.numberOfTouchesRequired = 1;
-    doubleTap.cancelsTouchesInView = NO;
-    doubleTap.delaysTouchesBegan = NO;
-    doubleTap.delaysTouchesEnded = NO;
-
-    static DoubleTapGestureDelegate *delegate = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        delegate = [[DoubleTapGestureDelegate alloc] init];
-    });
-    doubleTap.delegate = delegate;
-
-    [view addGestureRecognizer:doubleTap];
-    writeLog(@"Gesture attached to home bar with simultaneous delegate!");
-}
-
+// ----- Toggle function -----
 void toggleReachability() {
     writeLog(@"Toggling Reachability...");
     NSArray *classNames = @[@"SBReachabilityManager", @"SBReachabilityController"];
@@ -161,56 +107,78 @@ void toggleReachability() {
     writeLog(@"Used Darwin notification fallback");
 }
 
-void addDoubleTapToHomeBar(id self) {
-    UIWindow *keyWindow = nil;
-    if ([UIApplication sharedApplication].delegate && [[UIApplication sharedApplication].delegate respondsToSelector:@selector(window)]) {
-        keyWindow = [[UIApplication sharedApplication].delegate window];
-    }
-    if (!keyWindow) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-        keyWindow = [UIApplication sharedApplication].windows.firstObject;
-#pragma clang diagnostic pop
-    }
-    if (!keyWindow) {
-        writeLog(@"No keyWindow, retrying...");
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-            addDoubleTapToHomeBar(self);
-        });
-        return;
-    }
+// ----- Overlay view that captures double-taps -----
+@interface DoubleTapOverlay : UIView
+@end
 
-    UIView *homeBar = nil;
-    findHomeGrabberInView(keyWindow, &homeBar);
+@implementation DoubleTapOverlay
 
-    if (homeBar) {
-        attachGestureToView(homeBar, self, @selector(handleDoubleTap:));
-    } else {
-        writeLog(@"Home bar not found, retrying...");
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-            addDoubleTapToHomeBar(self);
-        });
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        self.backgroundColor = [UIColor clearColor];
+        self.userInteractionEnabled = YES;
+        self.alpha = 0.01; // Almost invisible, but still receives touches
+
+        UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleDoubleTap:)];
+        doubleTap.numberOfTapsRequired = 2;
+        doubleTap.numberOfTouchesRequired = 1;
+        doubleTap.cancelsTouchesInView = NO;
+        doubleTap.delaysTouchesBegan = NO;
+        doubleTap.delaysTouchesEnded = NO;
+        [self addGestureRecognizer:doubleTap];
+
+        writeLog(@"Overlay created with double-tap gesture");
     }
+    return self;
 }
 
-// ----- Hook SBHomeScreenViewController -----
+- (void)handleDoubleTap:(UITapGestureRecognizer *)gesture {
+    writeLog(@"Double-tap detected on overlay!");
+    UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
+    [generator impactOccurred];
+    toggleReachability();
+}
+
+- (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
+    // Only respond to touches in the bottom 50px (adjust as needed)
+    return point.y > self.bounds.size.height - 50;
+}
+
+@end
+
+// ----- Hook SBHomeScreenViewController to add overlay -----
 %hook SBHomeScreenViewController
 
 - (void)viewDidAppear:(BOOL)animated {
     %orig;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-            addDoubleTapToHomeBar(self);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+            UIWindow *keyWindow = nil;
+            if ([UIApplication sharedApplication].delegate && [[UIApplication sharedApplication].delegate respondsToSelector:@selector(window)]) {
+                keyWindow = [[UIApplication sharedApplication].delegate window];
+            }
+            if (!keyWindow) {
+                keyWindow = [UIApplication sharedApplication].windows.firstObject;
+            }
+            if (!keyWindow) {
+                writeLog(@"No keyWindow, retrying...");
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2.0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+                    [self viewDidAppear:animated]; // re-trigger
+                });
+                return;
+            }
+
+            // Add overlay covering the bottom area
+            CGFloat height = 60; // covers home bar area
+            CGFloat width = keyWindow.bounds.size.width;
+            CGFloat y = keyWindow.bounds.size.height - height;
+            DoubleTapOverlay *overlay = [[DoubleTapOverlay alloc] initWithFrame:CGRectMake(0, y, width, height)];
+            [keyWindow addSubview:overlay];
+            writeLog(@"Overlay added to keyWindow!");
         });
     });
-}
-
-- (void)handleDoubleTap:(UITapGestureRecognizer *)gesture {
-    writeLog(@"Double-tap detected!");
-    UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
-    [generator impactOccurred];
-    toggleReachability();
 }
 
 %end
