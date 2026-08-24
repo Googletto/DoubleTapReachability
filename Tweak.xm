@@ -1,5 +1,17 @@
 #import <UIKit/UIKit.h>
-#import <SpringBoard/SpringBoard.h>
+#import <Foundation/Foundation.h>
+
+// Declare the Reachability Manager interface
+@interface SBReachabilityManager : NSObject
++ (instancetype)sharedInstance;
+- (BOOL)isReachabilityActive;
+- (void)activateReachability;
+- (void)deactivateReachability;
+@end
+
+// Declare HomeGrabberView (to avoid forward declaration warning)
+@interface SBHomeGrabberView : UIView
+@end
 
 %hook SBHomeGrabberView
 
@@ -15,8 +27,10 @@
         tapCount++;
         
         if (tapCount >= 2) {
-            // Toggle Reachability
-            SBReachabilityManager *manager = [%c(SBReachabilityManager) sharedInstance];
+            // Get the Reachability manager via runtime class
+            Class managerClass = %c(SBReachabilityManager);
+            id manager = [managerClass sharedInstance];
+            
             if ([manager isReachabilityActive]) {
                 [manager deactivateReachability];
             } else {
