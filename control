@@ -1,0 +1,11 @@
+Package: com.yourname.doubletapareachability
+Name: Double Tap Reachability
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: Double tap home bar to trigger Reachability
+Maintainer: Your Name <your@email.com>
+Author: Your Name <your@email.com>
+Section: Tweaks
+Depends: firmware (>= 17.0), mobilesubstrate (>= 0.9.7000)
+Conflicts: 
+Replaces:
