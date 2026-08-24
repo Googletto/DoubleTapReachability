@@ -8,7 +8,6 @@ static NSString *logFilePath = @"/var/mobile/Documents/DoubleTapReachability.log
 
 void writeLog(NSString *format, ...) {
     if (!debugEnabled) return;
-
     va_list args;
     va_start(args, format);
     NSString *message = [[NSString alloc] initWithFormat:format arguments:args];
@@ -34,12 +33,9 @@ void writeLog(NSString *format, ...) {
         [fh writeData:[logLine dataUsingEncoding:NSUTF8StringEncoding]];
         [fh closeFile];
     }
-
-    // Also print to console
     NSLog(@"%@", message);
 }
 
-// ----- Preferences -----
 void loadPreferences() {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     [defaults registerDefaults:@{@"DebugLogging": @NO}];
@@ -47,7 +43,7 @@ void loadPreferences() {
     writeLog(@"Preferences loaded. Debug logging: %@", debugEnabled ? @"ON" : @"OFF");
 }
 
-// ----- Reachability classes (declared) -----
+// ----- Reachability classes -----
 @interface SBReachabilityManager : NSObject
 + (instancetype)sharedInstance;
 - (BOOL)isReachabilityActive;
@@ -61,7 +57,16 @@ void loadPreferences() {
 - (void)toggleReachability;
 @end
 
-// ----- Hook the home screen view controller -----
+// ----- Category on SBHomeScreenViewController to declare helper methods -----
+@interface SBHomeScreenViewController (DoubleTapReachability)
+- (void)addDoubleTapToHomeBar;
+- (void)findHomeGrabberInView:(UIView *)view result:(UIView **)outView;
+- (void)attachGestureToView:(UIView *)view;
+- (void)handleDoubleTap:(UITapGestureRecognizer *)gesture;
+- (void)toggleReachability;
+@end
+
+// ----- Hook SBHomeScreenViewController -----
 %hook SBHomeScreenViewController
 
 - (void)viewDidAppear:(BOOL)animated {
@@ -74,7 +79,17 @@ void loadPreferences() {
 }
 
 - (void)addDoubleTapToHomeBar {
-    UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
+    // Get key window the modern way
+    UIWindow *keyWindow = nil;
+    for (UIWindow *window in [UIApplication sharedApplication].windows) {
+        if (window.isKeyWindow) {
+            keyWindow = window;
+            break;
+        }
+    }
+    if (!keyWindow) {
+        keyWindow = [UIApplication sharedApplication].windows.firstObject;
+    }
     if (!keyWindow) {
         writeLog(@"No keyWindow, retrying...");
         [self performSelector:@selector(addDoubleTapToHomeBar) withObject:nil afterDelay:2.0];
@@ -125,16 +140,13 @@ void loadPreferences() {
 
 - (void)handleDoubleTap:(UITapGestureRecognizer *)gesture {
     writeLog(@"Double-tap detected!");
-
     UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
     [generator impactOccurred];
-
     [self toggleReachability];
 }
 
 - (void)toggleReachability {
     writeLog(@"Toggling Reachability...");
-
     NSArray *classNames = @[@"SBReachabilityManager", @"SBReachabilityController"];
     for (NSString *className in classNames) {
         Class cls = NSClassFromString(className);
