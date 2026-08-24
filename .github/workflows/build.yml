@@ -1,38 +1,25 @@
-name: Build Tweak
+name: Build DoubleTapReachability   # You can rename this to "Build DoubleTapReachability"
 
 on:
   push:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    
+    runs-on: macos-latest
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
-    
-    - name: Install Theos
-      run: |
-        git clone https://github.com/theos/theos.git $HOME/theos
-        echo "THEOS=$HOME/theos" >> $GITHUB_ENV
-        echo "$HOME/theos/bin" >> $GITHUB_PATH
-    
-    - name: Install SDK
-      run: |
-        mkdir -p $HOME/theos/sdks
-        cd $HOME/theos/sdks
-        wget https://github.com/theos/sdks/raw/master/iPhoneOS17.0.sdk.tar.xz
-        tar -xf iPhoneOS17.0.sdk.tar.xz
-    
-    - name: Build tweak
-      run: |
-        make clean
-        make package
-    
-    - name: Upload DEB
-      uses: actions/upload-artifact@v4   # <-- updated to v4
-      with:
-        name: DoubleTapReachability
-        path: packages/*.deb
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Install Theos
+        uses: Randomblock1/theos-action@v1
+
+      - name: Build the package
+        run: |
+          make package FINALPACKAGE=1
+
+      - name: Upload the .deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: DoubleTapReachability-deb
+          path: packages/*.deb
