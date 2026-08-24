@@ -1,0 +1,9 @@
+{
+  "name": "Double Tap Reachability",
+  "version": "1.0.0",
+  "description": "Double tap home bar to trigger Reachability",
+  "icon": "https://raw.githubusercontent.com/yourusername/DoubleTapReachability/main/icon.png",
+  "depiction": "https://github.com/yourusername/DoubleTapReachability",
+  "author": "Your Name",
+  "section": "Tweaks"
+}
